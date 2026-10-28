@@ -209,3 +209,17 @@ button:focus-visible { outline: 2px solid #aafde8; outline-offset: 4px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* v0.2 — Combat readability and feedback. */
+.menu-actions { display: flex; align-items: center; gap: 12px; }
+.menu-audio { min-height: 35px; padding: 8px 13px; background: rgba(10, 31, 34, 0.64); border: 1px solid rgba(164, 226, 199, 0.26); color: #baf5df; font-size: 9px; font-weight: 800; letter-spacing: 0.08em; }
+.menu-audio:hover { border-color: #baf5df; }
+.boss-warning { width: min(410px, calc(100vw - 26px)); display: flex; flex-direction: column; align-items: stretch; gap: 10px; text-align: center; }
+.boss-warning .meter { height: 7px; }
+.critical-health { position: absolute; inset: 0; pointer-events: none; z-index: 2; box-shadow: inset 0 0 140px 25px rgba(185, 23, 28, 0.49); animation: critical-beat 1.1s ease-in-out infinite alternate; }
+@keyframes critical-beat { from { opacity: 0.38; } to { opacity: 0.88; } }
+@media (max-width: 720px) {
+  .menu-actions { flex-direction: column-reverse; align-items: flex-end; gap: 6px; }
+  .menu-audio { font-size: 8px; }
+  .icon-button { width: 34px; font-size: 13px; }
+}

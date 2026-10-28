@@ -35,3 +35,10 @@ All names, symbols, silhouettes, costumes, stories and Arts must be original. In
 5. Wind 2 + Echo 1 unlocks Tempest Trama; R activates Resonance with full Flux.
 6. Dash, pause/resume, victory/defeat, restart and local best score work.
 7. TypeScript check, tests and production build pass in CI.
+
+## v0.2 combat-feel vertical slice
+- Original articulated model of Aya Sen; procedural animation for running, attacks, dash, resonance and damage.
+- Instanced spark trails and impact bursts, camera reactions, high-visibility enemy windups, spatial separation and boss health presentation.
+- Lightweight synthesized SFX with persistently stored mute preference.
+- No external character models, voice clips, or music from protected franchises.
+- Next: manual cross-browser gameplay QA, graphical profiling, original Blender-authored rig and professional animation set.
