@@ -2,6 +2,8 @@
 
 **A Ruptura do Véu** — an original 3D anime-styled browser roguelite.
 
+Version **0.3.0** introduces original differentiated enemy silhouettes (four factions and a custom animated boss), animated energy fissures, ringed valley landmarks, GPU-instanced airborne Flux motes, stylized shading, and angular swept-wind projectile graphics. All art is procedural and native Three.js: no copied anime or game assets.
+
 Version **0.2.0** adds an original animated Aya Sen character rig, attack warning indicators, spatial enemy separation, impact particles, camera feedback, a boss HP bar and original synthesized audio.
 
 A compact, playable vertical slice: move, dash, defeat invading creatures, collect Flux, upgrade your Arts, unlock the Tempest Trama, activate Resonance and confront the Sentinela Partida.

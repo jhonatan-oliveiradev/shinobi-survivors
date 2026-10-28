@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { createWorld } from './world';
 import { createAyaRig } from './hero';
 import { CombatEffects } from './effects';
+import { CreatureArt } from './creatures';
+import { VeilAtmosphere } from './atmosphere';
+import { WindArtVisuals } from './arts-visuals';
 import { SoundPalette } from './audio';
 import { BOSS_SPAWN_TIME, hasStormTrama, initialCounts, pickUpgrades, PLAYER_RADIUS, TOTAL_TIME, xpThreshold } from './progression';
 import type { Phase, Snapshot, UpgradeId } from './types';
@@ -31,11 +34,6 @@ interface Pulse { mesh: THREE.Mesh; age: number; duration: number; }
 type Listener = (snapshot: Snapshot) => void;
 
 const ENEMY_LIMIT = 110;
-const ENEMY_COLORS: Record<FoeKind, string> = {
-  shade: '#9d5972', hunter: '#d88b58', brute: '#747c99', wisp: '#b77edc', boss: '#ffaf70',
-};
-const tmpObject = new THREE.Object3D();
-const tempColor = new THREE.Color();
 
 const safeBest = () => {
   try { return Number(window.localStorage.getItem('shinobi-best-kills') || '0') || 0; }
@@ -50,15 +48,13 @@ export class Game {
   private readonly hero = this.heroRig.root;
   private readonly effects = new CombatEffects(this.scene);
   private readonly sound = new SoundPalette();
+  private readonly creatureArt = new CreatureArt(this.scene, ENEMY_LIMIT);
+  private readonly atmosphere = new VeilAtmosphere(this.scene);
+  private readonly windArts = new WindArtVisuals();
   private readonly enemies: Foe[] = [];
   private readonly shots: Shot[] = [];
   private readonly orbs: Orb[] = [];
   private readonly pulses: Pulse[] = [];
-  private readonly enemyGeometry = new THREE.IcosahedronGeometry(0.94, 0);
-  private readonly enemyMaterial = new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 0.65, metalness: 0.15 });
-  private readonly enemyMesh = new THREE.InstancedMesh(this.enemyGeometry, this.enemyMaterial, ENEMY_LIMIT);
-  private readonly shotGeometry = new THREE.OctahedronGeometry(0.27, 0);
-  private readonly shotMaterial = new THREE.MeshBasicMaterial({ color: '#8effe5' });
   private readonly orbGeometry = new THREE.OctahedronGeometry(0.24, 0);
   private readonly orbMaterial = new THREE.MeshBasicMaterial({ color: '#f8cd87' });
   private readonly keys = new Set<string>();
@@ -92,10 +88,6 @@ export class Game {
   constructor(private readonly host: HTMLElement) {
     createWorld(this.scene);
     this.scene.add(this.hero);
-    this.enemyMesh.count = 0;
-    this.enemyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.enemyMesh.frustumCulled = false;
-    this.scene.add(this.enemyMesh);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
@@ -259,6 +251,7 @@ export class Game {
     this.lastFrame = milliseconds;
     if (this.snapshot.phase === 'playing' && delta > 0) this.update(delta);
     this.updateCamera(delta);
+    this.atmosphere.update(milliseconds / 1000);
     this.renderer.render(this.scene, this.camera);
     if (milliseconds - this.lastEmit > 130) this.emit();
   };
@@ -292,7 +285,7 @@ export class Game {
     this.updateOrbs(dt);
     this.updatePulses(dt);
     this.effects.update(dt);
-    this.updateEnemyInstances();
+    this.creatureArt.update(this.enemies, this.snapshot.elapsed);
 
     if (this.snapshot.health <= 0) this.endRun('defeat');
     else if (this.snapshot.elapsed >= TOTAL_TIME) this.endRun(this.snapshot.bossAlive ? 'defeat' : 'victory');
@@ -472,7 +465,7 @@ export class Game {
     for (let i = 0; i < count; i++) {
       const spread = (i - (count - 1) / 2) * 0.14;
       const direction = aim + spread;
-      const shot = new THREE.Mesh(this.shotGeometry, this.shotMaterial);
+      const shot = this.windArts.projectile(this.snapshot.storm);
       shot.position.set(this.hero.position.x, 1.35, this.hero.position.z);
       shot.scale.setScalar(1 + counts.wind * 0.12);
       this.scene.add(shot);
@@ -543,7 +536,10 @@ export class Game {
     const nearby = this.enemies
       .filter((foe) => foe !== original && Math.hypot(foe.x - x, foe.z - z) < 4.9)
       .slice(0, 2);
-    for (const foe of nearby) this.hitFoe(foe, damage);
+    for (const foe of nearby) {
+      this.effects.link(x, z, foe.x, foe.z);
+      this.hitFoe(foe, damage);
+    }
   }
 
   private updateOrbs(dt: number): void {
@@ -613,23 +609,6 @@ export class Game {
     }
   }
 
-  private updateEnemyInstances(): void {
-    this.enemyMesh.count = this.enemies.length;
-    for (let i = 0; i < this.enemies.length; i++) {
-      const foe = this.enemies[i];
-      const wobble = Math.sin(this.snapshot.elapsed * 4 + foe.phase) * 0.15;
-      tmpObject.position.set(foe.x, foe.radius + wobble, foe.z);
-      tmpObject.scale.setScalar(foe.radius);
-      tmpObject.rotation.set(0, foe.phase + this.snapshot.elapsed * 0.48, 0.15 * Math.sin(this.snapshot.elapsed * 3 + i));
-      tmpObject.updateMatrix();
-      this.enemyMesh.setMatrixAt(i, tmpObject.matrix);
-      tempColor.set(foe.flash > 0 ? '#fff8d7' : foe.windup > 0 ? '#f9a26d' : ENEMY_COLORS[foe.kind]);
-      this.enemyMesh.setColorAt(i, tempColor);
-    }
-    this.enemyMesh.instanceMatrix.needsUpdate = true;
-    if (this.enemyMesh.instanceColor) this.enemyMesh.instanceColor.needsUpdate = true;
-  }
-
   private updateCamera(dt: number): void {
     const x = this.hero.position.x;
     const z = this.hero.position.z;
@@ -673,7 +652,7 @@ export class Game {
     this.orbs.length = 0;
     this.pulses.length = 0;
     this.enemies.length = 0;
-    this.enemyMesh.count = 0;
+    this.creatureArt.clear();
     this.effects.clear();
   }
 
@@ -699,6 +678,8 @@ export class Game {
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
     this.clearDynamicObjects();
     this.effects.dispose();
+    this.creatureArt.dispose();
+    this.atmosphere.dispose();
     this.sound.dispose();
     this.scene.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
@@ -706,8 +687,7 @@ export class Game {
       const materials = Array.isArray(object.material) ? object.material : [object.material];
       materials.forEach((material) => material.dispose());
     });
-    this.shotGeometry.dispose();
-    this.shotMaterial.dispose();
+    this.windArts.dispose();
     this.orbGeometry.dispose();
     this.orbMaterial.dispose();
     this.renderer.dispose();

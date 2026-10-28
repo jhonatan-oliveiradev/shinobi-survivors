@@ -223,3 +223,9 @@ button:focus-visible { outline: 2px solid #aafde8; outline-offset: 4px; }
   .menu-audio { font-size: 8px; }
   .icon-button { width: 34px; font-size: 13px; }
 }
+
+/* v0.3: readable bronze/Flux art direction and atmospheric typography. */
+.menu-card__glyph { color: #d4edd6; text-shadow: 0 0 22px rgba(113,228,202,.5), 0 0 90px rgba(194,146,89,.17); }
+.game-tags span:first-child { color: #f0d0a7; border-color: rgba(221,181,128,.38); }
+.menu-card__traits span:first-child { border-color: rgba(211,173,111,.46); color: #e5c8a0; }
+.battle-toast { filter: drop-shadow(0 0 14px rgba(124,247,211,.36)); }
