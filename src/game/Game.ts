@@ -536,7 +536,10 @@ export class Game {
     const nearby = this.enemies
       .filter((foe) => foe !== original && Math.hypot(foe.x - x, foe.z - z) < 4.9)
       .slice(0, 2);
-    for (const foe of nearby) this.hitFoe(foe, damage);
+    for (const foe of nearby) {
+      this.effects.link(x, z, foe.x, foe.z);
+      this.hitFoe(foe, damage);
+    }
   }
 
   private updateOrbs(dt: number): void {

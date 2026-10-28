@@ -9,6 +9,12 @@ interface Spark {
   color: THREE.Color;
 }
 
+interface Link {
+  line: THREE.Line;
+  life: number;
+  duration: number;
+}
+
 interface Warning {
   x: number;
   z: number;
@@ -23,6 +29,7 @@ export class CombatEffects {
   private readonly maxWarnings = 38;
   private readonly sparks: Spark[] = [];
   private readonly warnings: Warning[] = [];
+  private readonly links: Link[] = [];
   private readonly sparkMesh: THREE.InstancedMesh;
   private readonly warningMesh: THREE.InstancedMesh;
   private readonly temp = new THREE.Object3D();
@@ -85,6 +92,30 @@ export class CombatEffects {
     this.warnings.push({ x, z, radius, duration, remaining: duration });
   }
 
+  /** Momentary zig-zag Flux links for the Storm Trama chain reaction. */
+  link(x: number, z: number, targetX: number, targetZ: number): void {
+    if (this.links.length >= 36) return;
+    const dx = targetX - x;
+    const dz = targetZ - z;
+    const length = Math.hypot(dx, dz);
+    if (length < 0.1) return;
+    const acrossX = -dz / length;
+    const acrossZ = dx / length;
+    const points: THREE.Vector3[] = [new THREE.Vector3(x, 1.35, z)];
+    for (let i = 1; i < 4; i++) {
+      const t = i / 4;
+      const offset = (Math.random() - 0.5) * Math.min(1.5, length * 0.26);
+      points.push(new THREE.Vector3(x + dx * t + acrossX * offset, 1.35 + Math.sin(t * Math.PI) * 0.38, z + dz * t + acrossZ * offset));
+    }
+    points.push(new THREE.Vector3(targetX, 1.35, targetZ));
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: '#f8d38d', transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false });
+    const line = new THREE.Line(geometry, material);
+    line.frustumCulled = false;
+    this.scene.add(line);
+    this.links.push({ line, life: 0.17, duration: 0.17 });
+  }
+
   update(dt: number): void {
     for (let i = this.sparks.length - 1; i >= 0; i--) {
       const spark = this.sparks[i];
@@ -108,6 +139,17 @@ export class CombatEffects {
     this.sparkMesh.instanceMatrix.needsUpdate = true;
     if (this.sparkMesh.instanceColor) this.sparkMesh.instanceColor.needsUpdate = true;
 
+    for (let i = this.links.length - 1; i >= 0; i--) {
+      const link = this.links[i];
+      link.life -= dt;
+      (link.line.material as THREE.LineBasicMaterial).opacity = Math.max(0, 0.95 * link.life / link.duration);
+      if (link.life <= 0) {
+        this.scene.remove(link.line);
+        link.line.geometry.dispose();
+        (link.line.material as THREE.Material).dispose();
+        this.links.splice(i, 1);
+      }
+    }
     for (let i = this.warnings.length - 1; i >= 0; i--) {
       const warning = this.warnings[i];
       warning.remaining -= dt;
@@ -130,6 +172,12 @@ export class CombatEffects {
   clear(): void {
     this.sparks.length = 0;
     this.warnings.length = 0;
+    for (const link of this.links) {
+      this.scene.remove(link.line);
+      link.line.geometry.dispose();
+      (link.line.material as THREE.Material).dispose();
+    }
+    this.links.length = 0;
     this.sparkMesh.count = 0;
     this.warningMesh.count = 0;
   }
