@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createWorld } from './world';
 import { createAyaRig } from './hero';
 import { CombatEffects } from './effects';
+import { SoundPalette } from './audio';
 import { BOSS_SPAWN_TIME, hasStormTrama, initialCounts, pickUpgrades, PLAYER_RADIUS, TOTAL_TIME, xpThreshold } from './progression';
 import type { Phase, Snapshot, UpgradeId } from './types';
 
@@ -48,6 +49,7 @@ export class Game {
   private readonly heroRig = createAyaRig();
   private readonly hero = this.heroRig.root;
   private readonly effects = new CombatEffects(this.scene);
+  private readonly sound = new SoundPalette();
   private readonly enemies: Foe[] = [];
   private readonly shots: Shot[] = [];
   private readonly orbs: Orb[] = [];
@@ -84,7 +86,7 @@ export class Game {
     phase: 'menu', elapsed: 0, totalTime: TOTAL_TIME, health: 100, maxHealth: 100,
     level: 1, xp: 0, xpToNext: xpThreshold(1), kills: 0, energy: 0,
     resonanceLeft: 0, storm: false, upgrades: [], counts: initialCounts(),
-    bossAlive: false, bossHealth: 0, bossMaxHealth: 0, dashCooldown: 0, banner: '', best: safeBest(),
+    bossAlive: false, bossHealth: 0, bossMaxHealth: 0, dashCooldown: 0, soundEnabled: this.sound.isEnabled, banner: '', best: safeBest(),
   };
 
   constructor(private readonly host: HTMLElement) {
@@ -151,6 +153,13 @@ export class Game {
     this.hurtTime = 0;
     this.dashTrailClock = 0;
     this.keys.clear();
+    this.sound.unlock();
+    this.sound.play('start');
+    this.emit(true);
+  }
+
+  toggleAudio(): void {
+    this.snapshot.soundEnabled = this.sound.toggle();
     this.emit(true);
   }
 
@@ -177,6 +186,7 @@ export class Game {
     }
     this.snapshot.upgrades = [];
     this.snapshot.phase = 'playing';
+    this.sound.play('level');
     if (this.snapshot.xp >= this.snapshot.xpToNext) this.levelUp();
     this.emit(true);
   }
@@ -185,6 +195,7 @@ export class Game {
     if (this.snapshot.phase !== 'playing' || this.snapshot.energy < 100 || this.resonanceTime > 0) return;
     this.snapshot.energy = 0;
     this.resonanceTime = 9;
+    this.sound.play('resonance');
     this.snapshot.banner = 'OLHO DA TEMPESTADE';
     this.addPulse(this.hero.position.x, this.hero.position.z, '#a2fff0', 5);
     this.effects.burst(this.hero.position.x, this.hero.position.z, '#a2ffdf', 36, 1.45); 
@@ -206,6 +217,7 @@ export class Game {
     }
     if (!event.repeat && (key === 'escape' || key === 'p')) this.togglePause();
     if (!event.repeat && key === 'r') this.activateResonance();
+    if (!event.repeat && key === 'm') this.toggleAudio();
     if (!event.repeat && (key === ' ' || key === 'shift')) this.dash();
     this.keys.add(key);
   };
@@ -233,6 +245,7 @@ export class Game {
   private dash(): void {
     if (this.snapshot.phase !== 'playing' || this.dashCooldown > 0) return;
     this.dashTime = 0.23;
+    this.sound.play('dash');
     this.invulnerable = 0.33;
     this.dashCooldown = Math.max(0.7, 1.55 - this.snapshot.counts.stride * 0.12);
     this.snapshot.energy = Math.min(100, this.snapshot.energy + 4);
@@ -318,7 +331,13 @@ export class Game {
   }
 
   private spawnEnemy(kind?: FoeKind): void {
-    if (this.enemies.length >= ENEMY_LIMIT) return;
+    if (this.enemies.length >= ENEMY_LIMIT) {
+      if (kind !== 'boss') return;
+      // The boss has a reserved place even in the largest wave.
+      const firstMinion = this.enemies.findIndex((foe) => foe.kind !== 'boss');
+      if (firstMinion >= 0) this.enemies.splice(firstMinion, 1);
+      else return;
+    }
     const roll = Math.random();
     const type = kind ?? (roll < 0.12 ? 'brute' : roll < 0.32 ? 'hunter' : roll < 0.51 ? 'wisp' : 'shade');
     const angle = Math.random() * Math.PI * 2;
@@ -344,6 +363,7 @@ export class Game {
     this.snapshot.bossHealth = boss?.hp ?? 0;
     this.snapshot.bossMaxHealth = boss?.maxHp ?? 0;
     this.snapshot.banner = 'SENTINELA PARTIDA · O GUARDIÃO DESPERTOU';
+    this.sound.play('boss');
     this.addPulse(this.hero.position.x, this.hero.position.z, '#f0a26a', 8);
     this.emit(true);
   }
@@ -375,6 +395,7 @@ export class Game {
             this.snapshot.health = Math.max(0, this.snapshot.health - (enemy.kind === 'boss' ? 22 : enemy.kind === 'brute' ? 13 : 8));
             this.invulnerable = 0.4;
             this.hurtTime = 0.32;
+            this.sound.play('hurt');
             this.cameraShake = Math.max(this.cameraShake, enemy.kind === 'boss' ? 0.9 : 0.38);
             this.effects.burst(px, pz, '#ff8e82', 20, 1.1);
             this.addPulse(px, pz, '#f7928c', 1.5);
@@ -440,6 +461,7 @@ export class Game {
     const target = this.nearestEnemy(23);
     if (!target) return;
     this.heroRig.strike();
+    this.sound.play('slash');
     const counts = this.snapshot.counts;
     const count = Math.min(5, 1 + counts.echo + (this.resonanceTime > 0 ? 1 : 0));
     const dx = target.x - this.hero.position.x;
@@ -490,6 +512,7 @@ export class Game {
 
   private hitFoe(enemy: Foe, damage: number): void {
     enemy.hp -= damage;
+    this.sound.play('impact');
     enemy.flash = 0.13;
     if (enemy.kind === 'boss') this.snapshot.bossHealth = Math.max(0, enemy.hp);
     if (enemy.hp > 0) return;
@@ -628,6 +651,7 @@ export class Game {
   private endRun(phase: Extract<Phase, 'victory' | 'defeat'>): void {
     if (this.snapshot.phase !== 'playing') return;
     this.snapshot.phase = phase;
+    this.sound.play(phase);
     this.snapshot.banner = '';
     if (this.snapshot.kills > this.snapshot.best) {
       this.snapshot.best = this.snapshot.kills;
@@ -675,6 +699,7 @@ export class Game {
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
     this.clearDynamicObjects();
     this.effects.dispose();
+    this.sound.dispose();
     this.scene.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
       object.geometry.dispose();
