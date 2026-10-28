@@ -42,3 +42,10 @@ All names, symbols, silhouettes, costumes, stories and Arts must be original. In
 - Lightweight synthesized SFX with persistently stored mute preference.
 - No external character models, voice clips, or music from protected franchises.
 - Next: manual cross-browser gameplay QA, graphical profiling, original Blender-authored rig and professional animation set.
+
+## v0.3 Original 3D art direction
+- Enemies have individually recognisable silhouettes: Veil Shade (twin horns / dark mask), Thorn Runner (narrow spear form), Bulwark (heavy shoulders), Flux Lantern (floating halo), and Fractured Sentinel boss (animated stone torso, copper crown and energy heart).
+- Vale do Véu gains distant basalt cliff layers, six perimeter relics, fragmented energy breach and instanced Flux motes. Decals and monuments are decorative and do not alter collision.
+- Aya and enemies use quantized toon lighting. Wind Arts use bespoke angular flowing blades, with golden Trama variant.
+- Maintain original-IP requirements: visual forms, names, silhouettes, narrative and effects are original. Asset pipeline remains procedural for the vertical slice; professional Blender/glTF characters are a future production milestone.
+- Art goals: silhouettes distinguishable at normal camera distance, combat decals above terrain, no frame-time regression with 100+ enemies, and readable windups on the new meshes.

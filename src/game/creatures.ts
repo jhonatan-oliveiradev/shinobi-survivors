@@ -30,9 +30,9 @@ const PROFILES: Record<Exclude<CreatureKind, 'boss'>, { coat: string; core: stri
 const unit = new THREE.Object3D();
 const tone = new THREE.Color();
 
-function mat(color: string, intensity = 0): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color, roughness: 0.67, flatShading: true, metalness: 0.08,
+function mat(color: string, intensity = 0): THREE.MeshToonMaterial {
+  return new THREE.MeshToonMaterial({
+    color,
     ...(intensity ? { emissive: color, emissiveIntensity: intensity } : {}),
   });
 }
@@ -51,7 +51,7 @@ export class CreatureArt {
   private readonly sentinelCore: SimplePart;
   private readonly sentinelCrown: THREE.Group;
   private readonly sentinelArms: THREE.Group[] = [];
-  private readonly sentinelMaterials: THREE.MeshStandardMaterial[] = [];
+  private readonly sentinelMaterials: THREE.MeshToonMaterial[] = [];
   private readonly root = new THREE.Group();
 
   constructor(private readonly scene: THREE.Scene, capacity = 110) {

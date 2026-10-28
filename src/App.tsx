@@ -142,7 +142,7 @@ export function App() {
         <main className="menu-screen">
           <div className="menu-screen__top">
             <Brand />
-            <div className="menu-actions"><button className="menu-audio" onClick={() => game.current?.toggleAudio()}>{state.soundEnabled ? "◖)) SOM LIGADO" : "◖) SOM DESLIGADO"}</button><span className="build-pill"><span className="live-dot" /> COMBAT UPDATE <b>0.2.0</b></span></div>
+            <div className="menu-actions"><button className="menu-audio" onClick={() => game.current?.toggleAudio()}>{state.soundEnabled ? "◖)) SOM LIGADO" : "◖) SOM DESLIGADO"}</button><span className="build-pill"><span className="live-dot" /> ART DIRECTION <b>0.3.0</b></span></div>
           </div>
           <div className="menu-screen__content">
             <section className="hero-copy">
@@ -153,13 +153,13 @@ export function App() {
                 <button className="primary-button" onClick={start}><span>INICIAR PROVAÇÃO</span><span aria-hidden="true">↗</span></button>
                 <div className="hero-actions__meta"><span>✦</span> JOGUE AGORA <span className="separator">/</span> 100% GRATUITO</div>
               </div>
-              <div className="game-tags"><span>COMBATE 3D</span><span>ROGUELITE</span><span>ARTES ELEMENTAIS</span><span>1 JOGADOR</span></div>
+              <div className="game-tags"><span>ANIME 3D</span><span>ROGUELITE</span><span>ARTES ELEMENTAIS</span><span>1 JOGADOR</span></div>
             </section>
             <aside className="menu-card">
               <div className="menu-card__top"><span>PROVAÇÃO Nº 001</span><span>◈</span></div>
               <div className="menu-card__glyph">✦</div>
               <div className="menu-card__line" />
-              <span className="eyebrow">PERSONAGEM INICIAL</span>
+              <span className="eyebrow">PERSONAGEM INICIAL · ORDEM DA VENTANIA</span>
               <h2>AYA <span>SEN</span></h2>
               <p>A Dançarina da Ventania domina as correntes invisíveis do Fluxo. Sua velocidade é sua maior arma.</p>
               <div className="menu-card__traits"><span>✧ VENTO</span><span>◈ MOBILIDADE</span><span>✹ RESSONÂNCIA</span></div>

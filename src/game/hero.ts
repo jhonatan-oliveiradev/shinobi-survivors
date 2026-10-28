@@ -14,11 +14,13 @@ export interface AyaRig {
   strike(): void;
 }
 
-function material(color: string, metalness = 0, emissive?: string): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color, roughness: metalness ? 0.47 : 0.83, metalness,
+function material(color: string, metalness = 0, emissive?: string): THREE.MeshToonMaterial {
+  // Quantized lighting across the character reads as hand-painted anime shading.
+  return new THREE.MeshToonMaterial({
+    color,
     ...(emissive ? { emissive, emissiveIntensity: 1.35 } : {}),
-    flatShading: true,
+    // Metallic accents use lighter tones instead of physically based reflections.
+    ...(metalness > 0 ? { color: new THREE.Color(color).lerp(new THREE.Color('#f1c58f'), 0.16) } : {}),
     side: THREE.DoubleSide,
   });
 }
