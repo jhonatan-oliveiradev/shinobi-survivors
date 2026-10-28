@@ -26,6 +26,10 @@ export interface Snapshot {
   upgrades: Upgrade[];
   counts: Record<UpgradeId, number>;
   bossAlive: boolean;
+  bossHealth: number;
+  bossMaxHealth: number;
+  dashCooldown: number;
+  soundEnabled: boolean;
   banner: string;
   best: number;
 }

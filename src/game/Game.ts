@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import { createHero, createWorld } from './world';
+import { createWorld } from './world';
+import { createAyaRig } from './hero';
+import { CombatEffects } from './effects';
+import { SoundPalette } from './audio';
 import { BOSS_SPAWN_TIME, hasStormTrama, initialCounts, pickUpgrades, PLAYER_RADIUS, TOTAL_TIME, xpThreshold } from './progression';
 import type { Phase, Snapshot, UpgradeId } from './types';
 
@@ -14,6 +17,8 @@ interface Foe {
   cooldown: number;
   phase: number;
   kind: FoeKind;
+  windup: number;
+  flash: number;
 }
 interface Shot {
   mesh: THREE.Mesh;
@@ -41,7 +46,10 @@ export class Game {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(54, 1, 0.1, 180);
   private readonly renderer: THREE.WebGLRenderer;
-  private readonly hero = createHero();
+  private readonly heroRig = createAyaRig();
+  private readonly hero = this.heroRig.root;
+  private readonly effects = new CombatEffects(this.scene);
+  private readonly sound = new SoundPalette();
   private readonly enemies: Foe[] = [];
   private readonly shots: Shot[] = [];
   private readonly orbs: Orb[] = [];
@@ -69,12 +77,16 @@ export class Game {
   private dragging = false;
   private lastMouseX = 0;
   private bossSpawned = false;
+  private cameraShake = 0;
+  private hurtTime = 0;
+  private dashTrailClock = 0;
+  private readonly enemyGrid = new Map<string, Foe[]>();
   private readonly cameraTarget = new THREE.Vector3();
   private readonly snapshot: Snapshot = {
     phase: 'menu', elapsed: 0, totalTime: TOTAL_TIME, health: 100, maxHealth: 100,
     level: 1, xp: 0, xpToNext: xpThreshold(1), kills: 0, energy: 0,
     resonanceLeft: 0, storm: false, upgrades: [], counts: initialCounts(),
-    bossAlive: false, banner: '', best: safeBest(),
+    bossAlive: false, bossHealth: 0, bossMaxHealth: 0, dashCooldown: 0, soundEnabled: this.sound.isEnabled, banner: '', best: safeBest(),
   };
 
   constructor(private readonly host: HTMLElement) {
@@ -126,7 +138,7 @@ export class Game {
       phase: 'playing', elapsed: 0, health: 100, maxHealth: 100,
       level: 1, xp: 0, xpToNext: xpThreshold(1), kills: 0, energy: 0,
       resonanceLeft: 0, storm: false, upgrades: [], counts: initialCounts(),
-      bossAlive: false, banner: 'A PROVAÇÃO COMEÇOU',
+      bossAlive: false, bossHealth: 0, bossMaxHealth: 0, dashCooldown: 0, banner: 'A PROVAÇÃO COMEÇOU',
     } satisfies Partial<Snapshot>);
     this.hero.position.set(0, 0, 0);
     this.hero.rotation.y = 0;
@@ -137,7 +149,17 @@ export class Game {
     this.invulnerable = 0;
     this.resonanceTime = 0;
     this.bossSpawned = false;
+    this.cameraShake = 0;
+    this.hurtTime = 0;
+    this.dashTrailClock = 0;
     this.keys.clear();
+    this.sound.unlock();
+    this.sound.play('start');
+    this.emit(true);
+  }
+
+  toggleAudio(): void {
+    this.snapshot.soundEnabled = this.sound.toggle();
     this.emit(true);
   }
 
@@ -164,6 +186,7 @@ export class Game {
     }
     this.snapshot.upgrades = [];
     this.snapshot.phase = 'playing';
+    this.sound.play('level');
     if (this.snapshot.xp >= this.snapshot.xpToNext) this.levelUp();
     this.emit(true);
   }
@@ -172,8 +195,11 @@ export class Game {
     if (this.snapshot.phase !== 'playing' || this.snapshot.energy < 100 || this.resonanceTime > 0) return;
     this.snapshot.energy = 0;
     this.resonanceTime = 9;
+    this.sound.play('resonance');
     this.snapshot.banner = 'OLHO DA TEMPESTADE';
     this.addPulse(this.hero.position.x, this.hero.position.z, '#a2fff0', 5);
+    this.effects.burst(this.hero.position.x, this.hero.position.z, '#a2ffdf', 36, 1.45); 
+    this.cameraShake = Math.max(this.cameraShake, 0.3);
     this.emit(true);
   }
 
@@ -191,6 +217,7 @@ export class Game {
     }
     if (!event.repeat && (key === 'escape' || key === 'p')) this.togglePause();
     if (!event.repeat && key === 'r') this.activateResonance();
+    if (!event.repeat && key === 'm') this.toggleAudio();
     if (!event.repeat && (key === ' ' || key === 'shift')) this.dash();
     this.keys.add(key);
   };
@@ -218,10 +245,13 @@ export class Game {
   private dash(): void {
     if (this.snapshot.phase !== 'playing' || this.dashCooldown > 0) return;
     this.dashTime = 0.23;
+    this.sound.play('dash');
     this.invulnerable = 0.33;
     this.dashCooldown = Math.max(0.7, 1.55 - this.snapshot.counts.stride * 0.12);
     this.snapshot.energy = Math.min(100, this.snapshot.energy + 4);
     this.addPulse(this.hero.position.x, this.hero.position.z, '#74e9e0', 1.8);
+    this.effects.dash(this.hero.position.x, this.hero.position.z, this.movement.x, this.movement.y);
+    this.dashTrailClock = 0.07;
   }
 
   private readonly loop = (milliseconds: number) => {
@@ -236,7 +266,9 @@ export class Game {
   private update(dt: number): void {
     this.snapshot.elapsed += dt;
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
+    this.snapshot.dashCooldown = this.dashCooldown;
     this.dashTime = Math.max(0, this.dashTime - dt);
+    this.hurtTime = Math.max(0, this.hurtTime - dt);
     this.invulnerable = Math.max(0, this.invulnerable - dt);
     this.resonanceTime = Math.max(0, this.resonanceTime - dt);
     this.snapshot.resonanceLeft = this.resonanceTime;
@@ -259,6 +291,7 @@ export class Game {
     this.updateShots(dt);
     this.updateOrbs(dt);
     this.updatePulses(dt);
+    this.effects.update(dt);
     this.updateEnemyInstances();
 
     if (this.snapshot.health <= 0) this.endRun('defeat');
@@ -287,11 +320,24 @@ export class Game {
     }
     const bob = moving ? Math.sin(this.snapshot.elapsed * 14) * 0.052 : Math.sin(this.snapshot.elapsed * 2.5) * 0.028;
     this.hero.position.y = bob;
-    this.hero.scale.setScalar(this.resonanceTime > 0 ? 1.12 : 1);
+    this.heroRig.update(this.snapshot.elapsed, dt, moving ? 1 : 0, this.dashTime > 0, this.resonanceTime > 0, this.hurtTime > 0);
+    if (this.dashTime > 0) {
+      this.dashTrailClock -= dt;
+      if (this.dashTrailClock <= 0) {
+        this.effects.dash(this.hero.position.x, this.hero.position.z, this.movement.x, this.movement.y);
+        this.dashTrailClock = 0.08;
+      }
+    }
   }
 
   private spawnEnemy(kind?: FoeKind): void {
-    if (this.enemies.length >= ENEMY_LIMIT) return;
+    if (this.enemies.length >= ENEMY_LIMIT) {
+      if (kind !== 'boss') return;
+      // The boss has a reserved place even in the largest wave.
+      const firstMinion = this.enemies.findIndex((foe) => foe.kind !== 'boss');
+      if (firstMinion >= 0) this.enemies.splice(firstMinion, 1);
+      else return;
+    }
     const roll = Math.random();
     const type = kind ?? (roll < 0.12 ? 'brute' : roll < 0.32 ? 'hunter' : roll < 0.51 ? 'wisp' : 'shade');
     const angle = Math.random() * Math.PI * 2;
@@ -306,14 +352,18 @@ export class Game {
       boss: [1250, 2.7, 3],
     }[type];
     const hp = stats[0] * (1 + this.snapshot.elapsed * 0.005);
-    this.enemies.push({ x, z, hp, maxHp: hp, speed: stats[1], radius: stats[2], cooldown: 0, phase: Math.random() * 6.28, kind: type });
+    this.enemies.push({ x, z, hp, maxHp: hp, speed: stats[1], radius: stats[2], cooldown: 0, windup: 0, flash: 0, phase: Math.random() * 6.28, kind: type });
   }
 
   private spawnBoss(): void {
     this.bossSpawned = true;
     this.spawnEnemy('boss');
     this.snapshot.bossAlive = true;
+    const boss = this.enemies.find((foe) => foe.kind === 'boss');
+    this.snapshot.bossHealth = boss?.hp ?? 0;
+    this.snapshot.bossMaxHealth = boss?.maxHp ?? 0;
     this.snapshot.banner = 'SENTINELA PARTIDA · O GUARDIÃO DESPERTOU';
+    this.sound.play('boss');
     this.addPulse(this.hero.position.x, this.hero.position.z, '#f0a26a', 8);
     this.emit(true);
   }
@@ -321,21 +371,76 @@ export class Game {
   private updateEnemies(dt: number): void {
     const px = this.hero.position.x;
     const pz = this.hero.position.z;
+    // Small spatial hash prevents solid piles of enemies without quadratic checks.
+    const cellSize = 3.3;
+    this.enemyGrid.clear();
+    for (const foe of this.enemies) {
+      const key = Math.floor(foe.x / cellSize) + ':' + Math.floor(foe.z / cellSize);
+      let cell = this.enemyGrid.get(key);
+      if (!cell) { cell = []; this.enemyGrid.set(key, cell); }
+      cell.push(foe);
+    }
     for (const enemy of this.enemies) {
+      enemy.flash = Math.max(0, enemy.flash - dt);
+      enemy.cooldown = Math.max(0, enemy.cooldown - dt);
       const vx = px - enemy.x;
       const vz = pz - enemy.z;
       const distance = Math.max(0.01, Math.hypot(vx, vz));
-      const sway = Math.sin(this.snapshot.elapsed * 2.5 + enemy.phase) * (enemy.kind === 'wisp' ? 1.4 : 0.45);
-      if (distance > enemy.radius + 0.62) {
-        enemy.x += (vx / distance * enemy.speed + -vz / distance * sway) * dt;
-        enemy.z += (vz / distance * enemy.speed + vx / distance * sway) * dt;
+
+      if (enemy.windup > 0) {
+        enemy.windup -= dt;
+        if (enemy.windup <= 0) {
+          const hitRange = enemy.kind === 'boss' ? 4.1 : enemy.radius + 0.95;
+          if (distance < hitRange && this.invulnerable <= 0) {
+            this.snapshot.health = Math.max(0, this.snapshot.health - (enemy.kind === 'boss' ? 22 : enemy.kind === 'brute' ? 13 : 8));
+            this.invulnerable = 0.4;
+            this.hurtTime = 0.32;
+            this.sound.play('hurt');
+            this.cameraShake = Math.max(this.cameraShake, enemy.kind === 'boss' ? 0.9 : 0.38);
+            this.effects.burst(px, pz, '#ff8e82', 20, 1.1);
+            this.addPulse(px, pz, '#f7928c', 1.5);
+          }
+          enemy.cooldown = enemy.kind === 'boss' ? 2.3 : enemy.kind === 'hunter' ? 1.3 : 1.8;
+        }
+        continue;
       }
-      enemy.cooldown = Math.max(0, enemy.cooldown - dt);
-      if (distance < enemy.radius + 0.85 && enemy.cooldown <= 0 && this.invulnerable <= 0) {
-        this.snapshot.health = Math.max(0, this.snapshot.health - (enemy.kind === 'boss' ? 24 : enemy.kind === 'brute' ? 13 : 8));
-        enemy.cooldown = enemy.kind === 'boss' ? 1.25 : 0.82;
-        this.invulnerable = 0.26;
-        this.addPulse(px, pz, '#f7928c', 1.5);
+
+      if (distance < (enemy.kind === 'boss' ? 4.15 : enemy.radius + 1.45) && enemy.cooldown <= 0) {
+        const windup = enemy.kind === 'boss' ? 0.88 : enemy.kind === 'hunter' ? 0.35 : 0.6;
+        enemy.windup = windup;
+        this.effects.telegraph(enemy.x, enemy.z, enemy.kind === 'boss' ? 4.1 : enemy.radius + 0.95, windup);
+        continue;
+      }
+
+      if (distance > enemy.radius + 1.5) {
+        let repelX = 0;
+        let repelZ = 0;
+        const ix = Math.floor(enemy.x / cellSize);
+        const iz = Math.floor(enemy.z / cellSize);
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            const neighbors = this.enemyGrid.get((ix + dx) + ':' + (iz + dz));
+            if (!neighbors) continue;
+            for (const other of neighbors) {
+              if (other === enemy) continue;
+              const ox = enemy.x - other.x;
+              const oz = enemy.z - other.z;
+              const separation = Math.max(0.001, Math.hypot(ox, oz));
+              const desired = (enemy.radius + other.radius) * 1.08;
+              if (separation < desired) {
+                const strength = (desired - separation) / desired;
+                repelX += (ox / separation) * strength;
+                repelZ += (oz / separation) * strength;
+              }
+            }
+          }
+        }
+        const sway = Math.sin(this.snapshot.elapsed * 2.5 + enemy.phase) * (enemy.kind === 'wisp' ? 1.25 : 0.28);
+        const steerX = vx / distance + repelX * 1.2;
+        const steerZ = vz / distance + repelZ * 1.2;
+        const steerLength = Math.max(0.01, Math.hypot(steerX, steerZ));
+        enemy.x += (steerX / steerLength * enemy.speed - vz / distance * sway) * dt;
+        enemy.z += (steerZ / steerLength * enemy.speed + vx / distance * sway) * dt;
       }
     }
   }
@@ -355,12 +460,15 @@ export class Game {
   private fire(): void {
     const target = this.nearestEnemy(23);
     if (!target) return;
+    this.heroRig.strike();
+    this.sound.play('slash');
     const counts = this.snapshot.counts;
     const count = Math.min(5, 1 + counts.echo + (this.resonanceTime > 0 ? 1 : 0));
     const dx = target.x - this.hero.position.x;
     const dz = target.z - this.hero.position.z;
     const aim = Math.atan2(dz, dx);
     const damage = (18 + counts.wind * 7) * Math.pow(1.25, counts.edge) * (this.resonanceTime > 0 ? 1.75 : 1);
+    this.effects.burst(this.hero.position.x, this.hero.position.z, '#90fbe3', 4, 0.4, 1.6);
     for (let i = 0; i < count; i++) {
       const spread = (i - (count - 1) / 2) * 0.14;
       const direction = aim + spread;
@@ -387,6 +495,8 @@ export class Game {
             this.hitFoe(foe, shot.damage);
             if (this.snapshot.storm) this.chainLightning(foe.x, foe.z, shot.damage * 0.36, foe);
             this.snapshot.energy = Math.min(100, this.snapshot.energy + 2);
+            this.effects.burst(foe.x, foe.z, foe.kind === 'boss' ? '#f7ba79' : '#a1fce7', foe.kind === 'boss' ? 17 : 9, 0.7, foe.radius);
+            this.cameraShake = Math.max(this.cameraShake, foe.kind === 'boss' ? 0.17 : 0.055);
             this.addPulse(foe.x, foe.z, '#6df2de', 1.05);
             consumed = true;
             break;
@@ -402,11 +512,15 @@ export class Game {
 
   private hitFoe(enemy: Foe, damage: number): void {
     enemy.hp -= damage;
+    this.sound.play('impact');
+    enemy.flash = 0.13;
+    if (enemy.kind === 'boss') this.snapshot.bossHealth = Math.max(0, enemy.hp);
     if (enemy.hp > 0) return;
     const index = this.enemies.indexOf(enemy);
     if (index < 0) return;
     this.enemies.splice(index, 1);
     this.snapshot.kills++;
+    this.effects.burst(enemy.x, enemy.z, enemy.kind === 'boss' ? '#ffb785' : '#c4ffdb', enemy.kind === 'boss' ? 70 : 16, enemy.kind === 'boss' ? 2.0 : 1.2, enemy.radius);
     this.snapshot.energy = Math.min(100, this.snapshot.energy + (enemy.kind === 'boss' ? 30 : 5));
     const amount = enemy.kind === 'boss' ? 18 : enemy.kind === 'brute' ? 4 : 2;
     for (let i = 0; i < amount; i++) {
@@ -418,6 +532,8 @@ export class Game {
     }
     if (enemy.kind === 'boss') {
       this.snapshot.bossAlive = false;
+      this.snapshot.bossHealth = 0;
+      this.cameraShake = 1.6;
       this.snapshot.banner = 'A SENTINELA FOI DERROTADA';
       this.addPulse(enemy.x, enemy.z, '#ffe0a6', 9);
     }
@@ -507,7 +623,7 @@ export class Game {
       tmpObject.rotation.set(0, foe.phase + this.snapshot.elapsed * 0.48, 0.15 * Math.sin(this.snapshot.elapsed * 3 + i));
       tmpObject.updateMatrix();
       this.enemyMesh.setMatrixAt(i, tmpObject.matrix);
-      tempColor.set(ENEMY_COLORS[foe.kind]);
+      tempColor.set(foe.flash > 0 ? '#fff8d7' : foe.windup > 0 ? '#f9a26d' : ENEMY_COLORS[foe.kind]);
       this.enemyMesh.setColorAt(i, tempColor);
     }
     this.enemyMesh.instanceMatrix.needsUpdate = true;
@@ -523,12 +639,19 @@ export class Game {
       z + Math.cos(this.cameraAzimuth) * this.cameraDistance,
     );
     this.camera.position.lerp(this.cameraTarget, Math.min(1, dt * 6 + 0.025));
+    this.cameraShake = Math.max(0, this.cameraShake - dt * 2.8);
+    if (this.cameraShake > 0) {
+      this.camera.position.x += (Math.random() - 0.5) * this.cameraShake;
+      this.camera.position.y += (Math.random() - 0.5) * this.cameraShake * 0.45;
+      this.camera.position.z += (Math.random() - 0.5) * this.cameraShake;
+    }
     this.camera.lookAt(x, 0.5, z);
   }
 
   private endRun(phase: Extract<Phase, 'victory' | 'defeat'>): void {
     if (this.snapshot.phase !== 'playing') return;
     this.snapshot.phase = phase;
+    this.sound.play(phase);
     this.snapshot.banner = '';
     if (this.snapshot.kills > this.snapshot.best) {
       this.snapshot.best = this.snapshot.kills;
@@ -551,6 +674,7 @@ export class Game {
     this.pulses.length = 0;
     this.enemies.length = 0;
     this.enemyMesh.count = 0;
+    this.effects.clear();
   }
 
   private emit(force = false): void {
@@ -574,6 +698,8 @@ export class Game {
     this.renderer.domElement.removeEventListener('wheel', this.onWheel);
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
     this.clearDynamicObjects();
+    this.effects.dispose();
+    this.sound.dispose();
     this.scene.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
       object.geometry.dispose();

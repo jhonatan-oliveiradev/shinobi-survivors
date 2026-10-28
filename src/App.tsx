@@ -7,7 +7,7 @@ const INITIAL: Snapshot = {
   phase: 'menu', elapsed: 0, totalTime: TOTAL_TIME, health: 100, maxHealth: 100,
   level: 1, xp: 0, xpToNext: xpThreshold(1), kills: 0, energy: 0,
   resonanceLeft: 0, storm: false, upgrades: [], counts: initialCounts(),
-  bossAlive: false, banner: '', best: 0,
+  bossAlive: false, bossHealth: 0, bossMaxHealth: 0, dashCooldown: 0, soundEnabled: true, banner: '', best: 0,
 };
 
 function Meter({ value, maximum, variant = 'cyan' }: { value: number; maximum: number; variant?: string }) {
@@ -72,6 +72,7 @@ export function App() {
     <div className="app">
       <div ref={mount} className="world" aria-hidden="true" />
       <div className="vignette" aria-hidden="true" />
+      {state.phase === "playing" && state.health / Math.max(1, state.maxHealth) < 0.27 && <div className="critical-health" aria-hidden="true" />}
       {error && <div className="error-state"><h2>WebGL indisponível</h2><p>{error}</p></div>}
 
       {!error && state.phase !== 'menu' && (
@@ -89,6 +90,7 @@ export function App() {
             <div className="hud__stats">
               <div><span className="eyebrow">NÍVEL</span><strong>{String(state.level).padStart(2, '0')}</strong></div>
               <div><span className="eyebrow">ELIMINAÇÕES</span><strong>{String(state.kills).padStart(3, '0')}</strong></div>
+              <button className="icon-button" title={state.soundEnabled ? "Silenciar efeitos sonoros (M)" : "Ativar efeitos sonoros (M)"} onClick={() => game.current?.toggleAudio()} aria-label={state.soundEnabled ? "Desativar som" : "Ativar som"}>{state.soundEnabled ? "◖))" : "◖)"}</button>
               <button className="icon-button" title="Pausar jogo (Esc)" onClick={() => game.current?.togglePause()} aria-label="Pausar ou continuar">
                 {state.phase === 'paused' ? '▶' : 'Ⅱ'}
               </button>
@@ -128,9 +130,9 @@ export function App() {
               </div>
             </button>
           </div>
-          {state.bossAlive && state.phase === 'playing' && <div className="boss-warning">⚔ SENTINELA PARTIDA — ENFRENTE O GUARDIÃO</div>}
+          {state.bossAlive && state.phase === 'playing' && <div className="boss-warning"><span>⚔ SENTINELA PARTIDA — O GUARDIÃO DESPERTA</span><Meter value={state.bossHealth} maximum={state.bossMaxHealth} variant="danger" /></div>}
           {playing && toast && <div key={toast} className="battle-toast">{toast}</div>}
-          {playing && <div className="micro-help">WASD mover <span>·</span> <Key>ESPAÇO</Key> esquivar <span>·</span> mouse direito girar câmera</div>}
+          {playing && <div className="micro-help">WASD mover <span>·</span> <Key>SHIFT</Key> {state.dashCooldown > 0 ? "esquiva " + state.dashCooldown.toFixed(1) + "s" : "esquiva pronta"} <span>·</span> <Key>M</Key> som <span>·</span> mouse direito girar câmera</div>}
         </>
       )}
 
@@ -140,7 +142,7 @@ export function App() {
         <main className="menu-screen">
           <div className="menu-screen__top">
             <Brand />
-            <span className="build-pill"><span className="live-dot" /> VERTICAL SLICE <b>0.1.0</b></span>
+            <div className="menu-actions"><button className="menu-audio" onClick={() => game.current?.toggleAudio()}>{state.soundEnabled ? "◖)) SOM LIGADO" : "◖) SOM DESLIGADO"}</button><span className="build-pill"><span className="live-dot" /> COMBAT UPDATE <b>0.2.0</b></span></div>
           </div>
           <div className="menu-screen__content">
             <section className="hero-copy">
@@ -178,7 +180,7 @@ export function App() {
           <p>Respire. O Véu permanecerá onde está até você voltar.</p>
           <button className="primary-button" onClick={() => game.current?.togglePause()}><span>CONTINUAR</span><span>↗</span></button>
           <button className="quiet-button" onClick={start}>REINICIAR PROVAÇÃO</button>
-          <div className="controls-list"><span>WASD · MOVIMENTO</span><span>SHIFT / ESPAÇO · ESQUIVA</span><span>R · RESSONÂNCIA</span></div>
+          <div className="controls-list"><span>WASD · MOVIMENTO</span><span>SHIFT / ESPAÇO · ESQUIVA</span><span>R · RESSONÂNCIA</span><span>M · SOM</span></div>
         </section>
       )}
 
